@@ -541,6 +541,7 @@ class Options:
         self.stdout = False
         self.template = None
         self.timeout = 6
+        self.userprofile = None
         self.verbose = 0
 
         self.setprinter = False
@@ -555,7 +556,7 @@ class Options:
                  'help', 'import=', 'listener', 'meta=', 'no-launch', 'output=',
                  'outputpath', 'password=', 'pipe=', 'port=', 'preserve',
                  'server=', 'timeout=', 'show', 'stdin', 'stdout', 'template', 'printer=',
-                 'verbose', 'version'] )
+                 'userprofile=', 'verbose', 'version'] )
         except getopt.error as exc:
             print('unoconv: %s, try unoconv -h for a list of all the options' % str(exc))
             sys.exit(255)
@@ -643,6 +644,8 @@ class Options:
                 self.template = arg
             elif opt in ['-T', '--timeout']:
                 self.timeout = int(arg)
+            elif opt in ['--userprofile']:
+                self.userprofile = arg
             elif opt in ['-v', '--verbose']:
                 self.verbose = self.verbose + 1
             elif opt in ['-V', '--version']:
@@ -730,6 +733,7 @@ class Options:
 
 unoconv options:
   -c, --connection=string             use a custom connection string
+      --userprofile=string            specify a different path to the LibreOffice user profile
   -d, --doctype=type                  specify document type
                                         (document, graphics, presentation, spreadsheet)
   -e, --export=name=value             set export filter options
@@ -811,9 +815,15 @@ class Convertor:
             try:
                 product = self.svcmgr.createInstance("com.sun.star.configuration.ConfigurationProvider").createInstanceWithArguments("com.sun.star.configuration.ConfigurationAccess", UnoProps(nodepath="/org.openoffice.Setup/Product"))
                 if product.ooName not in ('LibreOffice', 'LOdev') or LooseVersion(product.ooSetupVersion) <= LooseVersion('3.3'):
-                    ooproc = subprocess.Popen([office.binary, "-headless", "-invisible", "-nocrashreport", "-nodefault", "-nofirststartwizard", "-nologo", "-norestore", "-accept=%s" % op.connection], env=os.environ)
+                    prefix = "-"
                 else:
-                    ooproc = subprocess.Popen([office.binary, "--headless", "--invisible", "--nocrashreport", "--nodefault", "--nofirststartwizard", "--nologo", "--norestore", "--accept=%s" % op.connection], env=os.environ)
+                    prefix = "--"
+                cmd = [office.binary, prefix + "headless", prefix + "invisible", prefix + "nocrashreport",
+                    prefix + "nodefault", prefix + "nofirststartwizard", prefix + "nologo", prefix + "norestore",
+                    prefix + "accept=%s" % op.connection]
+                if op.userprofile != None:
+                    cmd += ["-env:UserInstallation=file://%s" % op.userprofile]
+                ooproc = subprocess.Popen(cmd, env=os.environ)
                 info(2, '%s listener successfully started. (pid=%s)' % (product.ooName, ooproc.pid))
 
                 ### Try connection to it for op.timeout seconds (flakky OpenOffice)
@@ -1162,9 +1172,14 @@ class Listener:
                 info(1, "Existing %s listener found, nothing to do." % product.ooName)
                 return
             if product.ooName != "LibreOffice" or LooseVersion(product.ooSetupVersion) <= LooseVersion('3.3'):
-                cmd = [office.binary, "-headless", "-invisible", "-nocrashreport", "-nodefault", "-nologo", "-nofirststartwizard", "-norestore", "-accept=%s" % op.connection]
+                prefix = "-"
             else:
-                cmd = [office.binary, "--headless", "--invisible", "--nocrashreport", "--nodefault", "--nologo", "--nofirststartwizard", "--norestore", "--accept=%s" % op.connection]
+                prefix = "--"
+            cmd = [office.binary, prefix + "headless", prefix + "invisible", prefix + "nocrashreport",
+                prefix + "nodefault", prefix + "nologo", prefix + "nofirststartwizard", prefix + "norestore",
+                prefix + "accept=%s" % op.connection]
+            if op.userprofile != None:
+                cmd += ["-env:UserInstallation=file://%s" % op.userprofile]
 
             # The rationale for using subprocess.Popen is to be able to handle
             # a SIGTERM signal below and properly terminate the started office
@@ -1221,9 +1236,15 @@ def die(ret, msg=None):
             info(2, 'Trying to stop %s GUI listener.' % product.ooName)
             try:
                 if product.ooName != "LibreOffice" or product.ooSetupVersion <= 3.3:
-                    subprocess.Popen([office.binary, "-headless", "-invisible", "-nocrashreport", "-nodefault", "-nofirststartwizard", "-nologo", "-norestore", "-unaccept=%s" % op.connection], env=os.environ)
+                    prefix = "-"
                 else:
-                    subprocess.Popen([office.binary, "--headless", "--invisible", "--nocrashreport", "--nodefault", "--nofirststartwizard", "--nologo", "--norestore", "--unaccept=%s" % op.connection], env=os.environ)
+                    prefix = "--"
+                cmd = [office.binary, prefix + "headless", prefix + "invisible", prefix + "nocrashreport",
+                    prefix + "nodefault", prefix + "nofirststartwizard", prefix + "nologo", prefix + "norestore",
+                    prefix + "unaccept=%s" % op.connection]
+                if op.userprofile != None:
+                    cmd += ["-env:UserInstallation=file://%s" % os.userprofile]
+                subprocess.Popen(cmd, env=os.environ)
                 ooproc.wait()
                 info(2, '%s listener successfully disabled.' % product.ooName)
             except Exception as e:
